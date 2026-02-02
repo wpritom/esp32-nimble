@@ -14,6 +14,11 @@ static const char *TAG = "NIMBLE_EX";
 static void ble_app_advertise(void);
 void ble_store_config_init(void);
 
+// handle notification / data sending
+static uint16_t notify_handle;
+static uint16_t conn_handle_global = BLE_HS_CONN_HANDLE_NONE;
+
+
 // 1. Access Callback: Handles Read/Write operations
 static int gatt_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg) {
@@ -45,8 +50,11 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
             {
                 .uuid = BLE_UUID16_DECLARE(0xFFF1),
                 .access_cb = gatt_svc_access_cb,
+                .val_handle = &notify_handle,
                 // These flags force the "Just Works" pairing popup
-                .flags = BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_WRITE_ENC,
+                .flags = BLE_GATT_CHR_F_READ |
+                         BLE_GATT_CHR_F_WRITE |
+                         BLE_GATT_CHR_F_NOTIFY,
             },
             { 0 } 
         },
@@ -55,37 +63,77 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
 };
 
 // 3. GAP Event Handler: Managing the Connection
-static int ble_gap_event(struct ble_gap_event *event, void *arg) {
-    switch (event->type) {
-        case BLE_GAP_EVENT_CONNECT:
-            ESP_LOGI(TAG, "Connection %s", event->connect.status == 0 ? "established" : "failed");
-            if (event->connect.status != 0) {
-                ble_app_advertise();
-            }
-            break;
-
-        case BLE_GAP_EVENT_DISCONNECT:
-            ESP_LOGI(TAG, "Disconnected; restarting advertising. Reason: %d", event->disconnect.reason);
+static int ble_gap_event(struct ble_gap_event *event, void *arg)
+{
+    switch (event->type)
+    {
+    case BLE_GAP_EVENT_CONNECT:
+        if (event->connect.status == 0)
+        {
+            conn_handle_global = event->connect.conn_handle;
+            ESP_LOGI(TAG, "Connected");
+        }
+        else
+        {
             ble_app_advertise();
-            break;
+        }
+        break;
 
-        case BLE_GAP_EVENT_ENC_CHANGE:
-            // This confirms that bonding/encryption is successful
-            ESP_LOGI(TAG, "Encryption status changed; status=%d", event->enc_change.status);
-            return 0;
+    case BLE_GAP_EVENT_DISCONNECT:
+        conn_handle_global = BLE_HS_CONN_HANDLE_NONE;
+        ESP_LOGI(TAG, "Disconnected");
+        ble_app_advertise();
+        break;
 
-        case BLE_GAP_EVENT_PASSKEY_ACTION:
-            ESP_LOGI(TAG, "Passkey action required");
-            break;
-        case BLE_GAP_EVENT_ADV_COMPLETE:
-            ble_app_advertise();
-            break;
+    case BLE_GAP_EVENT_ENC_CHANGE:
+        // This confirms that bonding/encryption is successful
+        ESP_LOGI(TAG, "Encryption status changed; status=%d", event->enc_change.status);
+        return 0;
 
-        default:
-            break;
+    case BLE_GAP_EVENT_PASSKEY_ACTION:
+        ESP_LOGI(TAG, "Passkey action required");
+        break;
+    case BLE_GAP_EVENT_ADV_COMPLETE:
+        ble_app_advertise();
+        break;
+
+    default:
+        break;
     }
     return 0;
 }
+static void notify_task(void *param)
+{
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+
+        if (conn_handle_global == BLE_HS_CONN_HANDLE_NONE) {
+            continue; // not connected
+        }
+
+        char msg[20];
+        snprintf(msg, sizeof(msg), "Tick %lu", esp_log_timestamp());
+
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(msg, strlen(msg));
+        if (!om) {
+            ESP_LOGE(TAG, "Failed to allocate mbuf");
+            continue;
+        }
+
+        int rc = ble_gatts_notify_custom(
+            conn_handle_global,
+            notify_handle,
+            om
+        );
+
+        if (rc == 0) {
+            ESP_LOGI(TAG, "Notification sent: %s", msg);
+        } else {
+            ESP_LOGE(TAG, "Notify failed: %d", rc);
+        }
+    }
+}
+
 
 // 4. Advertising Configuration
 static void ble_app_advertise(void) {
@@ -141,7 +189,7 @@ void app_main(void) {
     ble_hs_cfg.sm_sc = 1;                             // Use LE Secure Connections
 
     ble_store_config_init();
-    
+
     ble_hs_cfg.sm_our_key_dist |= BLE_SM_PAIR_KEY_DIST_ENC;
     ble_hs_cfg.sm_their_key_dist |= BLE_SM_PAIR_KEY_DIST_ENC;
 
@@ -153,4 +201,6 @@ void app_main(void) {
     
 
     ESP_LOGI(TAG, "NimBLE Stack Initialized");
+    xTaskCreate(notify_task, "notify", 4096, NULL, 5, NULL);
+
 }
