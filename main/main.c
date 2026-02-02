@@ -2,7 +2,9 @@
 #include "esp_log.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "store/config/ble_store_config.h"
 #include "host/ble_hs.h"
+#include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
@@ -10,6 +12,7 @@ static uint8_t rw_value[20] = "Hello BLE";
 static const char *TAG = "NIMBLE_EX";
 
 static void ble_app_advertise(void);
+void ble_store_config_init(void);
 
 // 1. Access Callback: Handles Read/Write operations
 static int gatt_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle,
@@ -71,6 +74,9 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
             ESP_LOGI(TAG, "Encryption status changed; status=%d", event->enc_change.status);
             return 0;
 
+        case BLE_GAP_EVENT_PASSKEY_ACTION:
+            ESP_LOGI(TAG, "Passkey action required");
+            break;
         case BLE_GAP_EVENT_ADV_COMPLETE:
             ble_app_advertise();
             break;
@@ -89,7 +95,7 @@ static void ble_app_advertise(void) {
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     
-    const char *name = "ESP32_NIMBLE";
+    const char *name = "MEEWT";
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
@@ -111,6 +117,7 @@ static void ble_host_task(void *param) {
 
 // 5. Main Application Entry
 void app_main(void) {
+    
     // Initialize NVS (Required for storing pairing/bonding keys)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -120,11 +127,12 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
 
     nimble_port_init();
+    
 
     // Initialize GAP and GATT services
     ble_svc_gap_init();
     ble_svc_gatt_init();
-    ble_svc_gap_device_name_set("ESP32_NIMBLE");
+    ble_svc_gap_device_name_set("MEEWT");
 
     // Security Configuration for "Just Works" Pairing
     ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT; // No PIN entry required
@@ -132,11 +140,17 @@ void app_main(void) {
     ble_hs_cfg.sm_mitm = 0;                           // MITM must be 0 for Just Works
     ble_hs_cfg.sm_sc = 1;                             // Use LE Secure Connections
 
+    ble_store_config_init();
+    
+    ble_hs_cfg.sm_our_key_dist |= BLE_SM_PAIR_KEY_DIST_ENC;
+    ble_hs_cfg.sm_their_key_dist |= BLE_SM_PAIR_KEY_DIST_ENC;
+
     ble_gatts_count_cfg(gatt_svcs);
     ble_gatts_add_svcs(gatt_svcs);
 
     ble_hs_cfg.sync_cb = ble_app_advertise;
     nimble_port_freertos_init(ble_host_task);
+    
 
     ESP_LOGI(TAG, "NimBLE Stack Initialized");
 }
