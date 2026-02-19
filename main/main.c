@@ -138,6 +138,11 @@ static void notify_task(void *param)
 
 // 4. Advertising Configuration
 static void ble_app_advertise(void) {
+    // fresh start of advertising
+    if (ble_gap_adv_active()){
+        ble_gap_adv_stop();
+    }
+
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
 
@@ -171,7 +176,7 @@ static void ble_app_advertise(void) {
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
     ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params, ble_gap_event, NULL);
-    ESP_LOGI(TAG, "Advertising started...");
+    ESP_LOGI(TAG, "Advertising started | conn_mode=%d", adv_params.conn_mode);
 }
 
 static void ble_host_task(void *param) {
@@ -222,6 +227,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
 
     raven_ble_init();
+    
     while (true)
     {
         printf(" --- BLE NODE RUNNING...\n");
@@ -231,9 +237,9 @@ void app_main(void) {
         if (conn_handle_global != BLE_HS_CONN_HANDLE_NONE) {
             // --- Logic for when a Central is connected ---
             printf("Connected to Central! Handle: %d\n", conn_handle_global);
-            ble_app_advertise();
-            
-            // Example: Perform a GATT notification here
+            if(!ble_gap_adv_active()){
+                ble_app_advertise();
+            }
         }
 
     }
