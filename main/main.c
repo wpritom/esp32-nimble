@@ -93,6 +93,7 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_PASSKEY_ACTION:
         ESP_LOGI(TAG, "Passkey action required");
         break;
+        
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ble_app_advertise();
         break;
@@ -143,10 +144,15 @@ static void ble_app_advertise(void) {
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     
+
     const char *name = "MEEWT";
+    uint8_t mfg_data[4] = {0xe9, 0x14, 0x0f, 0x1}; // Manufacturer specific data
+
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
+    fields.mfg_data = mfg_data;
+    fields.mfg_data_len = sizeof(mfg_data);
 
     ble_gap_adv_set_fields(&fields);
 
@@ -165,7 +171,7 @@ static void ble_host_task(void *param) {
 
 // 5. Main Application Entry
 void app_main(void) {
-    
+    nvs_flash_erase();
     // Initialize NVS (Required for storing pairing/bonding keys)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
