@@ -157,7 +157,17 @@ static void ble_app_advertise(void) {
     ble_gap_adv_set_fields(&fields);
 
     memset(&adv_params, 0, sizeof(adv_params));
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; // BLE_GAP_CONN_MODE_NON (to avoid connection attepts)
+
+    if (conn_handle_global != BLE_HS_CONN_HANDLE_NONE)
+    {   
+        //  (to avoid connection attepts)
+        adv_params.conn_mode = BLE_GAP_CONN_MODE_NON;
+    }
+    else
+    {
+        
+        adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    }
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
     ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params, ble_gap_event, NULL);
