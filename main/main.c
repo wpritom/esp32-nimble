@@ -157,7 +157,7 @@ static void ble_app_advertise(void) {
     ble_gap_adv_set_fields(&fields);
 
     memset(&adv_params, 0, sizeof(adv_params));
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; // BLE_GAP_CONN_MODE_NON (to avoid connection attepts)
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
     ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &adv_params, ble_gap_event, NULL);
@@ -169,17 +169,7 @@ static void ble_host_task(void *param) {
     nimble_port_freertos_deinit();
 }
 
-// 5. Main Application Entry
-void app_main(void) {
-    nvs_flash_erase();
-    // Initialize NVS (Required for storing pairing/bonding keys)
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
+void raven_ble_init(void) {
     nimble_port_init();
     
 
@@ -208,5 +198,35 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "NimBLE Stack Initialized");
     xTaskCreate(notify_task, "notify", 4096, NULL, 5, NULL);
+}
+
+
+
+void app_main(void) {
+    // Initialize NVS (Required for storing pairing/bonding keys)
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    raven_ble_init();
+    while (true)
+    {
+        printf(" --- BLE NODE RUNNING...\n");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+
+
+        if (conn_handle_global != BLE_HS_CONN_HANDLE_NONE) {
+            // --- Logic for when a Central is connected ---
+            printf("Connected to Central! Handle: %d\n", conn_handle_global);
+            ble_app_advertise();
+            
+            // Example: Perform a GATT notification here
+        }
+
+    }
+    
 
 }
